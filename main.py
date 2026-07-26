@@ -7,19 +7,32 @@ import dateutil.parser
 import difflib
 
 # =========================
-# RSS一覧（必要なら後で差し替えOK）
+# RSS一覧（東洋経済削除・3カテゴリ構成）
 # =========================
 RSS_FEEDS = [
-    "https://news.yahoo.co.jp/rss/topics/it.xml",
-    "https://news.yahoo.co.jp/rss/topics/business.xml",
-    "https://news.yahoo.co.jp/rss/topics/economy.xml",
-    "https://news.yahoo.co.jp/rss/topics/finance.xml",
-    "https://news.yahoo.co.jp/rss/topics/science.xml",
-    "https://news.yahoo.co.jp/rss/topics/domestic.xml",
-    "https://news.yahoo.co.jp/rss/topics/world.xml",
-    "https://news.yahoo.co.jp/rss/topics/local.xml",
-    "https://news.yahoo.co.jp/rss/topics/sports.xml",
-    "https://news.yahoo.co.jp/rss/topics/entertainment.xml",
+    # --- AI・テクノロジー ---
+    ("AI・テクノロジー", "https://openai.com/blog/rss/"),
+    ("AI・テクノロジー", "https://ai.googleblog.com/feeds/posts/default"),
+    ("AI・テクノロジー", "https://blogs.nvidia.com/feed/"),
+    ("AI・テクノロジー", "https://www.itmedia.co.jp/rss/2.0/news.xml"),
+    ("AI・テクノロジー", "https://japan.cnet.com/rss/index.rdf"),
+    ("AI・テクノロジー", "https://gigazine.net/news/rss_2.0/"),
+    ("AI・テクノロジー", "https://jp.techcrunch.com/feed/"),
+    ("AI・テクノロジー", "https://techcrunch.com/feed/"),
+    ("AI・テクノロジー", "https://www.theverge.com/rss/index.xml"),
+    ("AI・テクノロジー", "https://www.wired.com/feed/rss"),
+
+    # --- 経済・ビジネス（株含む） ---
+    ("経済・ビジネス", "https://forbesjapan.com/feed/rss"),
+    ("経済・ビジネス", "https://diamond.jp/list/feed/rss"),
+    ("経済・ビジネス", "https://www3.nhk.or.jp/rss/news/cat5.xml"),
+    ("経済・ビジネス", "https://feeds.reuters.com/reuters/JPbusinessNews"),
+    ("経済・ビジネス", "https://www.bloomberg.co.jp/feed"),
+
+    # --- 採用・HR ---
+    ("採用・HR", "https://www.hrpro.co.jp/rss/"),
+    ("採用・HR", "https://hrnote.jp/feed/"),
+    ("採用・HR", "https://bizhint.jp/feed"),
 ]
 
 # =========================
@@ -28,14 +41,13 @@ RSS_FEEDS = [
 def fetch_rss_articles():
     articles = []
 
-    for url in RSS_FEEDS:
+    for category_hint, url in RSS_FEEDS:
         feed = feedparser.parse(url)
 
-        for entry in feed.entries[:20]:  # 各媒体20件
+        for entry in feed.entries[:20]:
             title = entry.title
             link = entry.link
 
-            # pubDate を datetime に変換
             if hasattr(entry, "published"):
                 dt = dateutil.parser.parse(entry.published)
             else:
@@ -45,12 +57,13 @@ def fetch_rss_articles():
                 "title": title,
                 "link": link,
                 "datetime": dt,
+                "category_hint": category_hint,
             })
 
     return articles
 
 # =========================
-# 類似タイトル判定（代表タイトル方式）
+# 類似タイトル判定
 # =========================
 def group_similar_titles(articles):
     groups = []
@@ -62,7 +75,7 @@ def group_similar_titles(articles):
             rep_title = group["rep_title"]
             ratio = difflib.SequenceMatcher(None, rep_title, article["title"]).ratio()
 
-            if ratio > 0.6:  # 類似判定の閾値
+            if ratio > 0.6:
                 group["items"].append(article)
                 added = True
                 break
@@ -76,37 +89,45 @@ def group_similar_titles(articles):
     return groups
 
 # =========================
-# カテゴリ分類（あなたの6カテゴリ）
+# カテゴリ分類（RSSヒント最優先＋キーワード補助）
 # =========================
-def classify_category(title):
-    title_lower = title.lower()
+def classify_category(article):
+    # RSSヒント最優先
+    if article.get("category_hint"):
+        return article["category_hint"]
 
-    if "ai" in title_lower or "人工知能" in title_lower:
+    title = article["title"]
+    t = title.lower()
+
+    # AI・テクノロジー
+    ai_keywords = [
+        "ai", "人工知能", "machine learning", "deep learning", "chatgpt", "openai",
+        "google", "apple", "microsoft", "meta", "amazon", "nvidia", "tesla"
+    ]
+    if any(k in t for k in ai_keywords):
         return "AI・テクノロジー"
 
-    if "google" in title_lower or "apple" in title_lower or "microsoft" in title_lower:
-        return "テック企業の動向"
-
-    if "株" in title_lower or "market" in title_lower or "日経" in title_lower:
-        return "株・マーケット"
-
-    if "副業" in title_lower or "働き方" in title_lower:
-        return "副業・働き方"
-
-    if "経済" in title_lower or "ビジネス" in title_lower:
+    # 経済・ビジネス（株含む）
+    business_keywords = [
+        "経済", "ビジネス", "企業", "決算", "スタートアップ", "業績",
+        "株", "market", "日経", "dow", "nasdaq", "為替", "円安", "円高"
+    ]
+    if any(k in t for k in business_keywords):
         return "経済・ビジネス"
 
-    return "採用・HR"
+    # 採用・HR
+    hr_keywords = ["採用", "面接", "人事", "hr", "候補者", "内定", "退職", "雇用", "労務"]
+    if any(k in t for k in hr_keywords):
+        return "採用・HR"
+
+    return "経済・ビジネス"
 
 # =========================
-# カテゴリ別に並べ替え
+# カテゴリ別に並べ替え＋抽出件数調整
 # =========================
 def sort_and_pick(groups):
     categories = {
         "AI・テクノロジー": [],
-        "テック企業の動向": [],
-        "株・マーケット": [],
-        "副業・働き方": [],
         "経済・ビジネス": [],
         "採用・HR": [],
     }
@@ -115,10 +136,8 @@ def sort_and_pick(groups):
         rep_title = group["rep_title"]
         items = group["items"]
 
-        # 最新日付を代表にする
         latest_dt = max(item["datetime"] for item in items)
-
-        category = classify_category(rep_title)
+        category = classify_category(items[0])
 
         categories[category].append({
             "title": rep_title,
@@ -127,23 +146,29 @@ def sort_and_pick(groups):
             "count": len(items)
         })
 
-    # 並び替え：新しい順 → similar_count → タイトル
     for cat in categories:
         categories[cat].sort(
             key=lambda x: (-x["datetime"].timestamp(), -x["count"], x["title"])
         )
 
-    return categories
+    # 抽出件数（AI10・経済10・HR5）
+    filtered = {
+        "AI・テクノロジー": categories["AI・テクノロジー"][:10],
+        "経済・ビジネス": categories["経済・ビジネス"][:10],
+        "採用・HR": categories["採用・HR"][:5],
+    }
+
+    return filtered
 
 # =========================
-# 日付フォーマット（MM-DD（曜））
+# 日付フォーマット
 # =========================
 def format_date(dt):
     youbi = ["月", "火", "水", "木", "金", "土", "日"]
     return dt.strftime(f"%m-%d（{youbi[dt.weekday()]}）")
 
 # =========================
-# メール本文生成（あなたの最終テンプレート）
+# メール本文生成（視認性改善）
 # =========================
 def build_email(categories):
     lines = []
@@ -151,27 +176,32 @@ def build_email(categories):
 
     order = [
         "AI・テクノロジー",
-        "テック企業の動向",
-        "株・マーケット",
-        "副業・働き方",
         "経済・ビジネス",
         "採用・HR",
     ]
 
     for cat in order:
-        lines.append(f"🔵 {cat}（上位5件）")
-        items = categories[cat][:5]
+        lines.append(f"🔵 {cat}")
+        lines.append("")
+
+        if len(categories[cat]) == 0:
+            lines.append("- 該当ニュースなし\n")
+            lines.append("---\n")
+            continue
+
+        items = categories[cat]
 
         for item in items:
             date_str = format_date(item["datetime"])
-            lines.append(f"- [{item['title']}（{date_str}）]({item['link']})")
+            lines.append(f"- **{item['title']}**（{date_str}）")
+            lines.append(f"  {item['link']}\n")
 
-        lines.append("")
+        lines.append("---\n")
 
     return "\n".join(lines)
 
 # =========================
-# メール送信（Gmail SMTP）
+# メール送信
 # =========================
 def send_mail(body, subject):
     host = os.getenv("SMTP_HOST")
