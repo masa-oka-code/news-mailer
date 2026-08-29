@@ -2,7 +2,7 @@ name: Daily News Delivery
 
 on:
   schedule:
-    - cron: "0 22 * * *"  # JST 07:00（GitHubはUTC）
+    - cron: "0 21 * * *"  # JST 6:00
   workflow_dispatch:
 
 jobs:
@@ -10,24 +10,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install feedparser python-dateutil
 
-      - name: Run news script
-        env:
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          MAIL_TO: ${{ secrets.MAIL_TO }}
-        run: |
-          python main.py
+      - name: Run script
+        run: python main.py
