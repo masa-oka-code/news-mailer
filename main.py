@@ -50,7 +50,13 @@ def fetch_rss_articles():
 
             if hasattr(entry, "published"):
                 dt = dateutil.parser.parse(entry.published)
+
+                # ★ タイムゾーンを削除して「naive datetime」に統一
+                if dt.tzinfo is not None:
+                    dt = dt.replace(tzinfo=None)
+
             else:
+                # ★ datetime.now() は naive なのでそのまま
                 dt = datetime.now()
 
             articles.append({
@@ -61,6 +67,7 @@ def fetch_rss_articles():
             })
 
     return articles
+
 
 # =========================
 # 類似タイトル判定
