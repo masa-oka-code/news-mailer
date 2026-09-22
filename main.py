@@ -44,6 +44,13 @@ def fetch_rss_articles():
     for category_hint, url in RSS_FEEDS:
         feed = feedparser.parse(url)
 
+        print("----------------")
+        print("URL:", url)
+        print("取得件数:", len(feed.entries))
+
+        if len(feed.entries) > 0:
+            print("最新記事:", feed.entries[0].title)
+
         for entry in feed.entries[:20]:
             title = entry.title
             link = entry.link
