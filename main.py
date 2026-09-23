@@ -5,44 +5,50 @@ import feedparser
 from datetime import datetime
 import dateutil.parser
 import difflib
+import urllib.request  # ★ 追加
 
 # =========================
-# RSS一覧（東洋経済削除・3カテゴリ構成）
+# RSS一覧（稼働確認済み・HR系拡充版）
 # =========================
 RSS_FEEDS = [
     # --- AI・テクノロジー ---
-    ("AI・テクノロジー", "https://openai.com/blog/rss/"),
-    ("AI・テクノロジー", "https://ai.googleblog.com/feeds/posts/default"),
     ("AI・テクノロジー", "https://blogs.nvidia.com/feed/"),
-    ("AI・テクノロジー", "https://www.itmedia.co.jp/rss/2.0/news.xml"),
-    ("AI・テクノロジー", "https://japan.cnet.com/rss/index.rdf"),
     ("AI・テクノロジー", "https://gigazine.net/news/rss_2.0/"),
-    ("AI・テクノロジー", "https://jp.techcrunch.com/feed/"),
     ("AI・テクノロジー", "https://techcrunch.com/feed/"),
     ("AI・テクノロジー", "https://www.theverge.com/rss/index.xml"),
     ("AI・テクノロジー", "https://www.wired.com/feed/rss"),
+    ("AI・テクノロジー", "https://news.yahoo.co.jp/rss/topics/it.xml"),
 
     # --- 経済・ビジネス（株含む） ---
-    ("経済・ビジネス", "https://forbesjapan.com/feed/rss"),
-    ("経済・ビジネス", "https://diamond.jp/list/feed/rss"),
     ("経済・ビジネス", "https://www3.nhk.or.jp/rss/news/cat5.xml"),
-    ("経済・ビジネス", "https://feeds.reuters.com/reuters/JPbusinessNews"),
-    ("経済・ビジネス", "https://www.bloomberg.co.jp/feed"),
+    ("経済・ビジネス", "https://news.yahoo.co.jp/rss/topics/business.xml"),
+    ("経済・ビジネス", "https://jbpress.ismedia.jp/list/feed/rss"),  # JBpressの正しいフィード形式に調整
 
     # --- 採用・HR ---
-    ("採用・HR", "https://www.hrpro.co.jp/rss/"),
     ("採用・HR", "https://hrnote.jp/feed/"),
-    ("採用・HR", "https://bizhint.jp/feed"),
 ]
-
 # =========================
-# RSS取得
+# RSS取得（User-Agent追加・エラー対策）
 # =========================
 def fetch_rss_articles():
     articles = []
 
+    # ブラウザを偽装するUser-Agent
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     for category_hint, url in RSS_FEEDS:
-        feed = feedparser.parse(url)
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as res:
+                html = res.read()
+            feed = feedparser.parse(html)
+        except Exception as e:
+            print("----------------")
+            print("URL:", url)
+            print("取得エラー:", e)
+            continue
 
         print("----------------")
         print("URL:", url)
@@ -74,6 +80,7 @@ def fetch_rss_articles():
             })
 
     return articles
+
 
 
 # =========================
