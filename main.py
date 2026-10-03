@@ -5,7 +5,8 @@ import feedparser
 from datetime import datetime
 import dateutil.parser
 import difflib
-import urllib.request  # ★ 追加
+import urllib.request
+import json  # ★ テック系ストック保存用に追加
 
 # =========================
 # RSS一覧（稼働確認済み・HR系拡充版）
@@ -22,18 +23,18 @@ RSS_FEEDS = [
     # --- 経済・ビジネス（株含む） ---
     ("経済・ビジネス", "https://www3.nhk.or.jp/rss/news/cat5.xml"),
     ("経済・ビジネス", "https://news.yahoo.co.jp/rss/topics/business.xml"),
-    ("経済・ビジネス", "https://jbpress.ismedia.jp/list/feed/rss"),  # JBpressの正しいフィード形式に調整
+    ("経済・ビジネス", "https://jbpress.ismedia.jp/list/feed/rss"),
 
     # --- 採用・HR ---
     ("採用・HR", "https://hrnote.jp/feed/"),
 ]
+
 # =========================
 # RSS取得（User-Agent追加・エラー対策）
 # =========================
 def fetch_rss_articles():
     articles = []
 
-    # ブラウザを偽装するUser-Agent
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -63,13 +64,9 @@ def fetch_rss_articles():
 
             if hasattr(entry, "published"):
                 dt = dateutil.parser.parse(entry.published)
-
-                # ★ タイムゾーンを削除して「naive datetime」に統一
                 if dt.tzinfo is not None:
                     dt = dt.replace(tzinfo=None)
-
             else:
-                # ★ datetime.now() は naive なのでそのまま
                 dt = datetime.now()
 
             articles.append({
@@ -80,8 +77,6 @@ def fetch_rss_articles():
             })
 
     return articles
-
-
 
 # =========================
 # 類似タイトル判定
@@ -110,17 +105,15 @@ def group_similar_titles(articles):
     return groups
 
 # =========================
-# カテゴリ分類（RSSヒント最優先＋キーワード補助）
+# カテゴリ分類
 # =========================
 def classify_category(article):
-    # RSSヒント最優先
     if article.get("category_hint"):
         return article["category_hint"]
 
     title = article["title"]
     t = title.lower()
 
-    # AI・テクノロジー
     ai_keywords = [
         "ai", "人工知能", "machine learning", "deep learning", "chatgpt", "openai",
         "google", "apple", "microsoft", "meta", "amazon", "nvidia", "tesla"
@@ -128,7 +121,6 @@ def classify_category(article):
     if any(k in t for k in ai_keywords):
         return "AI・テクノロジー"
 
-    # 経済・ビジネス（株含む）
     business_keywords = [
         "経済", "ビジネス", "企業", "決算", "スタートアップ", "業績",
         "株", "market", "日経", "dow", "nasdaq", "為替", "円安", "円高"
@@ -136,7 +128,6 @@ def classify_category(article):
     if any(k in t for k in business_keywords):
         return "経済・ビジネス"
 
-    # 採用・HR
     hr_keywords = ["採用", "面接", "人事", "hr", "候補者", "内定", "退職", "雇用", "労務"]
     if any(k in t for k in hr_keywords):
         return "採用・HR"
@@ -172,7 +163,6 @@ def sort_and_pick(groups):
             key=lambda x: (-x["datetime"].timestamp(), -x["count"], x["title"])
         )
 
-    # 抽出件数（AI10・経済10・HR5）
     filtered = {
         "AI・テクノロジー": categories["AI・テクノロジー"][:10],
         "経済・ビジネス": categories["経済・ビジネス"][:10],
@@ -189,7 +179,7 @@ def format_date(dt):
     return dt.strftime(f"%m-%d（{youbi[dt.weekday()]}）")
 
 # =========================
-# メール本文生成（視認性改善）
+# メール本文生成
 # =========================
 def build_email(categories):
     lines = []
@@ -222,11 +212,55 @@ def build_email(categories):
     return "\n".join(lines)
 
 # =========================
+# テック系ネタのストック保存処理（追加機能）
+# =========================
+def store_tech_challenges(categories):
+    STOCK_FILE = "weekly_stock.json"
+    
+    # 開発・API・Python・ツールに関連しそうなキーワード
+    tech_keywords = ["api", "python", "streamlit", "github", "ライブラリ", "ツール", "開発", "オープンソース", "ai", "llm", "モデル"]
+    
+    candidates = []
+    for item in categories.get("AI・テクノロジー", []):
+        title_lower = item["title"].lower()
+        if any(kw in title_lower for kw in tech_keywords):
+            candidates.append({
+                "title": item["title"],
+                "link": item["link"],
+                "date": item["datetime"].strftime("%Y-%m-%d")
+            })
+            
+    if not candidates:
+        return
+
+    # 既存ストックの読み込み
+    existing = []
+    if os.path.exists(STOCK_FILE):
+        try:
+            with open(STOCK_FILE, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            existing = []
+            
+    # 重複防止しつつ追加
+    existing_links = {c["link"] for c in existing}
+    added_count = 0
+    for c in candidates:
+        if c["link"] not in existing_links:
+            existing.append(c)
+            added_count += 1
+            
+    if added_count > 0:
+        with open(STOCK_FILE, "w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+        print(f"テック系お題候補を {added_count} 件ストックに追加しました。")
+
+# =========================
 # メール送信
 # =========================
 def send_mail(body, subject):
     host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT"))
+    port = int(os.getenv("SMTP_PORT", 587))
     user = os.getenv("SMTP_USER")
     password = os.getenv("SMTP_PASS")
     to = os.getenv("MAIL_TO")
@@ -249,7 +283,11 @@ if __name__ == "__main__":
     groups = group_similar_titles(articles)
     categories = sort_and_pick(groups)
 
+    # ★ テック系ネタをJSONへ蓄積する処理を呼び出し
+    store_tech_challenges(categories)
+
     today = datetime.now().strftime("%m-%d")
     body = build_email(categories)
-
+    
+    # ローカルテスト時はメール送信エラーを防ぐためコメントアウト等で調整可能です
     send_mail(body, f"今日のニュースまとめ（{today}）")
